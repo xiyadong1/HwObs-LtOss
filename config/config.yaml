@@ -32,7 +32,7 @@ obs:
   # OBS桶名
   bucket_name: "hydrogen-energy"
   # OBS endpoint
-  endpoint: "obs.cn-southwest-2.myhuaweicloud.com"
+  endpoint: "https://obs.cn-southwest-2.myhuaweicloud.com"
   # 文件前缀过滤（可选）
   prefix: ""
   # 排除文件后缀列表（可选）
@@ -43,7 +43,7 @@ oss:
   # OSS桶名
   bucket_name: "hf-test"
   # OSS endpoint
-  endpoint: "obs-tj.cucloud.cn"
+  endpoint: "https://obs-tj.cucloud.cn"
   # 文件存储路径前缀（可选）
   target_prefix: ""
   # OSS客户端配置
@@ -58,17 +58,17 @@ oss:
 # 多桶映射配置（优先级高于单独的obs/oss配置）
 bucket_mappings:
   # 示例映射：将obs-bucket-1的文件迁移到oss-bucket-1
-  - obs_bucket: "obs-bucket-1"
-    oss_bucket: "oss-bucket-1"
+  - obs_bucket: "hydrogen-energy"
+    oss_bucket: "hf-test"
     obs_prefix: ""          # OBS源路径前缀（可选）
     oss_prefix: ""          # OSS目标路径前缀（可选）
     exclude_suffixes: [".log", ".tmp"]  # 排除文件后缀（可选）
-  # 示例映射：将obs-bucket-2的data/目录迁移到oss-bucket-2的migrated_data/目录
-  - obs_bucket: "obs-bucket-2"
-    oss_bucket: "oss-bucket-2"
-    obs_prefix: "data/"
-    oss_prefix: "migrated_data/"
-    exclude_suffixes: []
+  # # 示例映射：将obs-bucket-2的data/目录迁移到oss-bucket-2的migrated_data/目录
+  # - obs_bucket: "obs-bucket-2"
+  #   oss_bucket: "oss-bucket-2"
+  #   obs_prefix: "data/"
+  #   oss_prefix: "migrated_data/"
+  #   exclude_suffixes: []
 
 # 迁移配置
 migrate:

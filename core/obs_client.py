@@ -7,7 +7,7 @@
 
 import os
 import threading
-from obs import ObsClient
+from obs import ObsClient as HuaweiObsClient
 from log.logger import logger
 from config.config_loader import config_loader
 
@@ -29,6 +29,10 @@ class OBSClient:
         self.access_key = obs_config.get('access_key')
         self.secret_key = obs_config.get('secret_key')
         
+        # 调试信息
+        logger.debug(f"bucket_config: {bucket_config}", module="obs_client")
+        logger.debug(f"obs_config: {obs_config}", module="obs_client")
+        
         # 如果提供了桶特定配置，则优先使用
         if bucket_config:
             self.bucket_name = bucket_config.get('bucket_name', obs_config.get('bucket_name'))
@@ -39,8 +43,11 @@ class OBSClient:
             self.prefix = obs_config.get('prefix', '')
             self.exclude_suffixes = obs_config.get('exclude_suffixes', [])
         
+        # 调试信息
+        logger.debug(f"self.bucket_name: {self.bucket_name}", module="obs_client")
+        
         # 初始化OBS客户端
-        self.client = ObsClient(
+        self.client = HuaweiObsClient(
             access_key_id=self.access_key,
             secret_access_key=self.secret_key,
             server=self.endpoint
@@ -61,11 +68,13 @@ class OBSClient:
         while True:
             # 列举OBS桶中的文件
             try:
+                # 调试：打印传递给listObjects的参数
+                logger.debug(f"调用listObjects参数：Bucket={self.bucket_name}, Prefix={self.prefix}, Marker={marker}, MaxKeys={max_keys}", module="obs_client")
+                
+                # 修复参数名：使用bucketName而不是Bucket（华为云SDK使用驼峰命名）
                 resp = self.client.listObjects(
-                    Bucket=self.bucket_name,
-                    Prefix=self.prefix,
-                    Marker=marker,
-                    MaxKeys=max_keys
+                    bucketName=self.bucket_name,
+                    prefix=self.prefix
                 )
                 
                 if resp.status < 300:
@@ -115,12 +124,13 @@ class OBSClient:
         """
         try:
             resp = self.client.getObject(
-                Bucket=self.bucket_name,
-                Key=object_key
+                bucketName=self.bucket_name,
+                objectKey=object_key
             )
             
             if resp.status < 300:
-                return resp.body.response.content
+                # HTTPResponse对象没有content属性，使用read()方法获取内容
+                return resp.body.response.read()
             else:
                 logger.error(f"OBS获取文件失败：{object_key}，错误：{resp.errorMessage}", module="obs_client")
                 raise Exception(f"OBS获取文件失败：{resp.errorMessage}")
@@ -141,8 +151,8 @@ class OBSClient:
         """
         try:
             resp = self.client.getObject(
-                Bucket=self.bucket_name,
-                Key=object_key,
+                bucketName=self.bucket_name,
+                objectKey=object_key,
                 loadStreamInMemory=False  # 不加载到内存，使用流
             )
             
@@ -163,9 +173,10 @@ class OBSClient:
             dict: 对象元数据
         """
         try:
+            # 检查headObject方法的参数名
             resp = self.client.headObject(
-                Bucket=self.bucket_name,
-                Key=object_key
+                bucketName=self.bucket_name,
+                objectKey=object_key
             )
             
             if resp.status < 300:
