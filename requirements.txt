@@ -1,0 +1,12 @@
+# 华为云OBS SDK
+esdk-obs-python==3.24.12
+
+# 联通云OSS SDK (基于阿里云SDK)
+oss2==2.18.1
+
+# 配置管理
+python-dotenv==1.0.0
+
+# 单元测试
+pytest==7.4.0
+pytest-mock==3.11.1

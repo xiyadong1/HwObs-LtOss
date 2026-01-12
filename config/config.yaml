@@ -1,0 +1,80 @@
+# 迁移工具配置文件
+
+# 并发配置
+concurrency:
+  # 并发迁移线程数
+  thread_count: 10
+  # 单线程上传块大小（字节）
+  chunk_size: 5242880  # 5MB
+  # 流式迁移阈值（10倍chunk_size）
+  streaming_threshold: 52428800  # 50MB
+
+# 重试配置
+retry:
+  # 重试次数
+  max_attempts: 3
+  # 重试间隔（秒）
+  interval: 5
+
+# 日志配置
+log:
+  # 日志路径
+  path: ./migrate_log/
+  # 日志级别（DEBUG/INFO/WARNING/ERROR/CRITICAL）
+  level: INFO
+  # 日志文件最大大小（MB）
+  max_size: 100
+  # 日志文件保留天数
+  backup_count: 7
+
+# 华为云OBS配置
+obs:
+  # OBS桶名
+  bucket_name: "hydrogen-energy"
+  # OBS endpoint
+  endpoint: "obs.cn-southwest-2.myhuaweicloud.com"
+  # 文件前缀过滤（可选）
+  prefix: ""
+  # 排除文件后缀列表（可选）
+  exclude_suffixes: [".log", ".tmp"]
+
+# 联通云OSS配置
+oss:
+  # OSS桶名
+  bucket_name: "hf-test"
+  # OSS endpoint
+  endpoint: "obs-tj.cucloud.cn"
+  # 文件存储路径前缀（可选）
+  target_prefix: ""
+  # OSS客户端配置
+  client:
+    # 连接超时时间（秒）
+    connect_timeout: 30
+    # 读取超时时间（秒）
+    read_timeout: 30
+    # 连接池大小
+    connection_pool_size: 100
+
+# 多桶映射配置（优先级高于单独的obs/oss配置）
+bucket_mappings:
+  # 示例映射：将obs-bucket-1的文件迁移到oss-bucket-1
+  - obs_bucket: "obs-bucket-1"
+    oss_bucket: "oss-bucket-1"
+    obs_prefix: ""          # OBS源路径前缀（可选）
+    oss_prefix: ""          # OSS目标路径前缀（可选）
+    exclude_suffixes: [".log", ".tmp"]  # 排除文件后缀（可选）
+  # 示例映射：将obs-bucket-2的data/目录迁移到oss-bucket-2的migrated_data/目录
+  - obs_bucket: "obs-bucket-2"
+    oss_bucket: "oss-bucket-2"
+    obs_prefix: "data/"
+    oss_prefix: "migrated_data/"
+    exclude_suffixes: []
+
+# 迁移配置
+migrate:
+  # 是否启用断点续传
+  enable_resume: true
+  # 每日汇总报告生成时间（小时）
+  report_hour: 0
+  # 进度更新间隔（秒）
+  progress_interval: 5

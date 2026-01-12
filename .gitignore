@@ -1,0 +1,16 @@
+# 统一所有文本文件的换行符为LF
+* text=auto eol=lf
+
+# Log directories
+log/
+migrate_log/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Pytest cache
+.pytest_cache/
