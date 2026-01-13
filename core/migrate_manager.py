@@ -84,8 +84,12 @@ class MigrateManager:
                 if self.exit_flag:
                     break
                 
-                # 从队列获取任务
-                task_info = self.task_queue.get(timeout=1)
+                try:
+                    # 从队列获取任务
+                    task_info = self.task_queue.get(timeout=1)
+                except queue.Empty:
+                    # 队列为空，继续等待
+                    continue
                 
                 if task_info is None:
                     # 收到终止信号
@@ -135,9 +139,6 @@ class MigrateManager:
                 # 标记任务完成
                 self.task_queue.task_done()
                 
-            except queue.Empty:
-                # 队列为空，退出线程
-                break
             except Exception as e:
                 logger.error(f"工作线程异常：{str(e)}", module="migrate_manager")
                 self.task_queue.task_done()
@@ -165,6 +166,64 @@ class MigrateManager:
         if self.exit_flag:
             print(f"\r迁移已终止，已处理：{self.processed_files}/{self.total_files}", flush=True)
     
+    def _process_bucket_mapping(self, bucket_mapping):
+        """
+        处理单个桶映射的迁移任务
+        
+        Args:
+            bucket_mapping (dict): 桶映射配置
+        """
+        obs_bucket = bucket_mapping['obs_bucket']
+        oss_bucket = bucket_mapping['oss_bucket']
+        
+        try:
+            logger.info(f"开始处理桶映射：OBS桶={obs_bucket} -> OSS桶={oss_bucket}", module="migrate_manager")
+            
+            # 为当前桶映射创建OBS客户端
+            obs_config = {
+                'bucket_name': obs_bucket,
+                'prefix': bucket_mapping['obs_prefix'],
+                'exclude_suffixes': bucket_mapping['exclude_suffixes']
+            }
+            
+            obs_client = OBSClient(bucket_config=obs_config)
+            
+            # 列举当前桶中的文件
+            files = list(obs_client.list_objects())
+            file_count = len(files)
+            
+            logger.info(f"从OBS桶 {obs_bucket} 找到 {file_count} 个文件", module="migrate_manager")
+            
+            # 关闭OBS客户端
+            obs_client.close()
+            
+            # 将文件信息和桶映射信息一起保存
+            bucket_files_to_migrate = []
+            for file_info in files:
+                bucket_files_to_migrate.append({
+                    'file_info': file_info,
+                    'bucket_mapping': bucket_mapping
+                })
+            
+            # 更新总文件数
+            with self.progress_lock:
+                self.total_files += file_count
+                migrate_logger.update_total_files(self.total_files)
+            
+            # 将当前桶映射的文件加入任务队列
+            for task_info in bucket_files_to_migrate:
+                # 检查退出标志
+                if self.exit_flag:
+                    logger.info(f"迁移已终止，停止为桶 {obs_bucket} 添加新任务", module="migrate_manager")
+                    break
+                self.task_queue.put(task_info)
+            
+            logger.info(f"桶映射 {obs_bucket} -> {oss_bucket} 的文件已全部加入任务队列", module="migrate_manager")
+            
+        except Exception as e:
+            logger.error(f"处理桶映射 {obs_bucket} -> {oss_bucket} 时发生异常：{str(e)}", module="migrate_manager")
+            raise
+    
     def start_migration(self):
         """
         开始迁移任务
@@ -177,42 +236,47 @@ class MigrateManager:
         signal.signal(signal.SIGTERM, self._signal_handler)
         
         try:
-            # 1. 获取所有需要迁移的文件
-            logger.info("开始列举OBS桶中的文件...", module="migrate_manager")
+            # 重置进度计数
+            self.processed_files = 0
+            self.total_files = 0
             
-            all_files_to_migrate = []
+            # 启动工作线程池（文件级并行）
+            logger.info(f"启动{self.thread_count}个工作线程...", module="migrate_manager")
+            for _ in range(self.thread_count):
+                thread = threading.Thread(target=self.worker)
+                thread.daemon = True
+                thread.start()
+                self.threads.append(thread)
+            
+            # 启动进度监控线程
+            progress_thread = threading.Thread(target=self.monitor_progress)
+            progress_thread.daemon = True
+            progress_thread.start()
             
             if self.bucket_mappings:
-                # 多桶迁移模式
+                # 多桶并行迁移模式
+                logger.info("开始多桶并行迁移...", module="migrate_manager")
+                
+                # 为每个桶映射创建独立的执行线程（桶级并行）
+                bucket_threads = []
                 for bucket_mapping in self.bucket_mappings:
-                    logger.info(f"处理桶映射：OBS桶={bucket_mapping['obs_bucket']} -> OSS桶={bucket_mapping['oss_bucket']}", module="migrate_manager")
-                    
-                    # 为当前桶映射创建OBS客户端
-                    obs_config = {
-                        'bucket_name': bucket_mapping['obs_bucket'],
-                        'prefix': bucket_mapping['obs_prefix'],
-                        'exclude_suffixes': bucket_mapping['exclude_suffixes']
-                    }
-                    
-                    obs_client = OBSClient(bucket_config=obs_config)
-                    
-                    # 列举当前桶中的文件
-                    files = list(obs_client.list_objects())
-                    file_count = len(files)
-                    
-                    logger.info(f"从OBS桶 {bucket_mapping['obs_bucket']} 找到 {file_count} 个文件", module="migrate_manager")
-                    
-                    # 将文件信息和桶映射信息一起保存
-                    for file_info in files:
-                        all_files_to_migrate.append({
-                            'file_info': file_info,
-                            'bucket_mapping': bucket_mapping
-                        })
-                    
-                    # 关闭OBS客户端
-                    obs_client.close()
+                    thread = threading.Thread(
+                        target=self._process_bucket_mapping,
+                        args=(bucket_mapping,)
+                    )
+                    thread.daemon = True
+                    thread.start()
+                    bucket_threads.append(thread)
+                    logger.info(f"已启动桶映射线程：OBS桶={bucket_mapping['obs_bucket']} -> OSS桶={bucket_mapping['oss_bucket']}", module="migrate_manager")
+                
+                # 等待所有桶映射线程完成文件列举和任务添加
+                logger.info("等待所有桶映射线程完成...", module="migrate_manager")
+                for thread in bucket_threads:
+                    thread.join()
+                
             else:
                 # 单桶迁移模式（向后兼容）
+                logger.info("开始单桶迁移...", module="migrate_manager")
                 from core.obs_client import get_obs_client
                 
                 obs_client = get_obs_client()
@@ -220,6 +284,10 @@ class MigrateManager:
                 file_count = len(files)
                 
                 logger.info(f"从OBS桶 {obs_client.bucket_name} 找到 {file_count} 个文件", module="migrate_manager")
+                
+                # 更新总文件数
+                self.total_files = file_count
+                migrate_logger.update_total_files(self.total_files)
                 
                 # 为每个文件创建默认的桶映射信息
                 default_bucket_mapping = {
@@ -230,51 +298,36 @@ class MigrateManager:
                     'exclude_suffixes': obs_client.exclude_suffixes
                 }
                 
+                # 将文件加入任务队列
                 for file_info in files:
-                    all_files_to_migrate.append({
+                    task_info = {
                         'file_info': file_info,
                         'bucket_mapping': default_bucket_mapping
-                    })
-            
-            self.total_files = len(all_files_to_migrate)
+                    }
+                    self.task_queue.put(task_info)
             
             logger.info(f"共找到{self.total_files}个文件需要迁移", module="migrate_manager")
-            migrate_logger.update_total_files(self.total_files)
             
             if self.total_files == 0:
                 logger.warning("没有找到需要迁移的文件", module="migrate_manager")
                 return
             
-            # 2. 重置进度计数
-            self.processed_files = 0
-            
-            # 3. 启动工作线程
-            logger.info(f"启动{self.thread_count}个工作线程...", module="migrate_manager")
-            for _ in range(self.thread_count):
-                thread = threading.Thread(target=self.worker)
-                thread.daemon = True
-                thread.start()
-                self.threads.append(thread)
-            
-            # 4. 启动进度监控线程
-            progress_thread = threading.Thread(target=self.monitor_progress)
-            progress_thread.daemon = True
-            progress_thread.start()
-            
-            # 5. 将任务加入队列
-            logger.info("将文件迁移任务加入队列...", module="migrate_manager")
-            for task_info in all_files_to_migrate:
-                # 检查退出标志
-                if self.exit_flag:
-                    logger.info("迁移已终止，停止添加新任务", module="migrate_manager")
-                    break
-                self.task_queue.put(task_info)
-            
-            # 6. 等待所有任务完成或终止
+            # 等待所有任务完成或终止
             logger.info("等待所有迁移任务完成...", module="migrate_manager")
             
-            # 使用循环检查任务完成情况，同时监听退出标志
-            while not self.task_queue.empty() and not self.exit_flag:
+            # 等待队列中的所有任务完成
+            # 使用线程来等待，以便能够响应退出信号
+            def wait_for_tasks():
+                self.task_queue.join()
+                return True
+            
+            # 使用线程等待任务完成，设置超时以便检查退出标志
+            wait_thread = threading.Thread(target=wait_for_tasks)
+            wait_thread.daemon = True
+            wait_thread.start()
+            
+            # 等待任务完成或收到退出信号
+            while wait_thread.is_alive() and not self.exit_flag:
                 time.sleep(1)
             
             # 7. 等待所有线程退出

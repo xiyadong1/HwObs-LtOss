@@ -3,7 +3,7 @@
 # 并发配置
 concurrency:
   # 并发迁移线程数
-  thread_count: 10
+  thread_count: 20
   # 单线程上传块大小（字节）
   chunk_size: 5242880  # 5MB
   # 流式迁移阈值（10倍chunk_size）
