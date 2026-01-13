@@ -7,6 +7,7 @@
 import sys
 import os
 import traceback
+import argparse
 from dotenv import load_dotenv
 
 # 加载.env文件
@@ -25,6 +26,11 @@ def main():
     """
     try:
         logger.info("华为云OBS→联通云OSS批量迁移工具启动", module="main")
+        
+        # 解析命令行参数
+        parser = argparse.ArgumentParser(description="华为云OBS到联通云OSS批量迁移工具")
+        parser.add_argument('--limit', type=int, default=None, help='限制迁移的文件数量，用于测试')
+        args = parser.parse_args()
         
         # 检查环境变量是否配置
         required_env_vars = [
@@ -49,6 +55,9 @@ def main():
         
         # 初始化迁移管理器并启动迁移
         migrate_manager = MigrateManager()
+        # 传递limit参数给迁移管理器
+        if args.limit:
+            migrate_manager.file_limit = args.limit
         migrate_manager.start_migration()
         
         logger.info("华为云OBS→联通云OSS批量迁移工具执行完成", module="main")

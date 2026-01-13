@@ -55,11 +55,17 @@ class MigrateManager:
         # 进度锁
         self.progress_lock = threading.Lock()
         
+        # 记录上次显示的进度行数，用于实时更新
+        self._last_displayed_lines = 0
+        
         # 控制台输出锁，确保并发时输出不混乱
         self.console_lock = threading.Lock()
         
         # 优雅终止标志
         self.exit_flag = False
+        
+        # 文件数量限制（用于测试）
+        self.file_limit = None
         
         logger.info(f"迁移管理器已初始化，并发线程数：{self.thread_count}", module="migrate_manager")
         logger.info(f"桶映射配置：{self.bucket_mappings}", module="migrate_manager")
@@ -162,7 +168,7 @@ class MigrateManager:
     
     def monitor_progress(self):
         """
-        监控迁移进度
+        监控迁移进度，分别显示每个桶的进度
         """
         start_time = time.time()
         
@@ -170,6 +176,9 @@ class MigrateManager:
             with self.progress_lock:
                 processed = self.processed_files
                 current_total = self.total_files
+                # 复制按桶统计的进度信息（避免并发修改问题）
+                bucket_total = self.bucket_total_files.copy()
+                bucket_processed = self.bucket_processed_files.copy()
             
             if processed == 0:
                 if current_total == 0:
@@ -182,6 +191,7 @@ class MigrateManager:
                         print(f"\r已找到 {current_total} 个文件，准备开始迁移...", end="", flush=True)
             else:
                 if current_total > 0:
+                    # 计算整体进度
                     percentage = (processed / current_total * 100)
                     elapsed_time = time.time() - start_time
                     files_per_second = processed / elapsed_time
@@ -196,19 +206,80 @@ class MigrateManager:
                     else:
                         eta = f"{remaining_time/3600:.1f}小时"
                     
-                    # 控制台输出详细进度信息
-                    progress_msg = f"\r迁移进度：{processed}/{current_total} ({percentage:.2f}%) | "
-                    progress_msg += f"速度：{files_per_second:.1f}文件/秒 | "
-                    progress_msg += f"预计完成时间：{eta}"
-                    with self.console_lock:
-                        print(progress_msg, end="", flush=True)
+                    # 构建每个桶的进度信息
+                    bucket_progress_lines = []
+                    for bucket_name, bucket_processed_count in bucket_processed.items():
+                        bucket_total_count = bucket_total.get(bucket_name, 0)
+                        if bucket_total_count > 0:
+                            bucket_percentage = (bucket_processed_count / bucket_total_count * 100)
+                            # 计算每个桶的预计完成时间
+                            bucket_remaining_files = bucket_total_count - bucket_processed_count
+                            if files_per_second > 0:
+                                bucket_remaining_time = bucket_remaining_files / files_per_second
+                                if bucket_remaining_time < 60:
+                                    bucket_eta = f"{bucket_remaining_time:.0f}秒"
+                                elif bucket_remaining_time < 3600:
+                                    bucket_eta = f"{bucket_remaining_time/60:.0f}分钟"
+                                else:
+                                    bucket_eta = f"{bucket_remaining_time/3600:.1f}小时"
+                            else:
+                                bucket_eta = "-"
+                            
+                            bucket_progress_lines.append(
+                                f"{bucket_name} 迁移进度：{bucket_processed_count}/{bucket_total_count} ({bucket_percentage:.2f}%) | "
+                                f"速度：{files_per_second:.1f}文件/秒 | 预计完成时间：{bucket_eta}"
+                            )
+                    
+                    # 构建完整的进度信息字符串
+                    if bucket_progress_lines:
+                        # 每5个文件更新一次，避免频繁闪烁
+                        if processed % 5 == 0 or processed == 1:
+                            import os
+                            
+                            # 构建进度信息
+                            progress_lines = []
+                            progress_lines.append(f"华为云OBS→联通云OSS批量迁移工具")
+                            progress_lines.append("=" * 50)
+                            progress_lines.append(f"")
+                            
+                            # 整体进度
+                            progress_lines.append(f"整体迁移进度：{processed}/{current_total} ({percentage:.2f}%)")
+                            progress_lines.append(f"迁移速度：{files_per_second:.1f}文件/秒")
+                            progress_lines.append(f"预计完成时间：{eta}")
+                            progress_lines.append(f"")
+                            
+                            # 各桶进度
+                            progress_lines.append("各桶迁移进度：")
+                            for line in bucket_progress_lines:
+                                progress_lines.append(f"  {line}")
+                            
+                            progress_lines.append(f"")
+                            progress_lines.append("按Ctrl+C终止迁移")
+                            
+                            # 日志记录进度（在清除屏幕之前记录，避免干扰显示）
+                            logger.info(f"迁移进度：{processed}/{current_total} ({percentage:.2f}%)", module="migrate_manager")
+                            
+                            # 输出进度信息
+                            with self.console_lock:
+                                # 清除屏幕
+                                os.system('cls' if os.name == 'nt' else 'clear')
+                                # 输出所有进度行
+                                for line in progress_lines:
+                                    print(line)
+                                print("", end="", flush=True)
+                    else:
+                        # 如果没有桶的进度信息，显示整体进度
+                        progress_msg = f"\r迁移进度：{processed}/{current_total} ({percentage:.2f}%) | "
+                        progress_msg += f"速度：{files_per_second:.1f}文件/秒 | "
+                        progress_msg += f"预计完成时间：{eta}"
+                        with self.console_lock:
+                            print(progress_msg, end="", flush=True)
                 else:
                     # 总文件数还在增加中，显示已处理的文件数
                     with self.console_lock:
                         print(f"\r已处理 {processed} 个文件，文件列举中...", end="", flush=True)
             
-            # 日志记录进度
-            logger.info(f"迁移进度：{processed}/{current_total} ({(processed/current_total*100) if current_total>0 else 0:.2f}%)", module="migrate_manager")
+            # 日志记录已移至进度显示内部，避免干扰输出
             
             # 等待指定时间后再次更新进度
             time.sleep(self.progress_interval)
@@ -259,24 +330,41 @@ class MigrateManager:
             # 关闭OBS客户端
             obs_client.close()
             
-            # 将文件信息和桶映射信息一起保存
+            # 将文件信息和桶映射信息一起保存，同时应用文件限制
             bucket_files_to_migrate = []
             for file_info in files:
-                bucket_files_to_migrate.append({
-                    'file_info': file_info,
-                    'bucket_mapping': bucket_mapping
-                })
+                # 检查是否达到文件数量限制
+                if self.file_limit is not None:
+                    with self.progress_lock:
+                        if self._added_files >= self.file_limit:
+                            logger.info(f"已达到文件数量限制({self.file_limit})，停止添加新文件", module="migrate_manager")
+                            break
+                        # 只有在未达到限制时才添加文件
+                        bucket_files_to_migrate.append({
+                            'file_info': file_info,
+                            'bucket_mapping': bucket_mapping
+                        })
+                        self._added_files += 1
+                else:
+                    # 没有文件限制，添加所有文件
+                    bucket_files_to_migrate.append({
+                        'file_info': file_info,
+                        'bucket_mapping': bucket_mapping
+                    })
+            
+            # 计算实际添加到任务队列中的文件数量
+            actual_count = len(bucket_files_to_migrate)
             
             # 更新总文件数和按桶统计的总文件数
             with self.progress_lock:
-                self.total_files += file_count
+                self.total_files += actual_count
                 migrate_logger.update_total_files(self.total_files)
                 # 初始化当前桶的统计信息
                 if obs_bucket not in self.bucket_total_files:
                     self.bucket_total_files[obs_bucket] = 0
                     self.bucket_processed_files[obs_bucket] = 0
                 # 更新当前桶的总文件数
-                self.bucket_total_files[obs_bucket] += file_count
+                self.bucket_total_files[obs_bucket] += actual_count
             
             # 将当前桶映射的文件加入任务队列
             for task_info in bucket_files_to_migrate:
@@ -311,6 +399,9 @@ class MigrateManager:
             self.processed_files = 0
             self.total_files = 0
             
+            # 初始化文件限制计数器
+            self._added_files = 0
+            
             # 启动工作线程池（文件级并行）
             logger.info(f"启动{self.thread_count}个工作线程...", module="migrate_manager")
             for _ in range(self.thread_count):
@@ -320,14 +411,65 @@ class MigrateManager:
                 self.threads.append(thread)
             
             if self.bucket_mappings:
-                # 多桶并行迁移模式
-                logger.info("开始多桶并行迁移...", module="migrate_manager")
+                # 多桶迁移模式
+                logger.info("开始多桶迁移...", module="migrate_manager")
+                
+                # 收集所有桶的文件信息
+                all_files_to_migrate = []
                 
                 # 为每个桶映射创建独立的执行线程（桶级并行）
                 bucket_threads = []
+                # 使用字典来存储每个桶的文件生成器
+                bucket_file_generators = {}
+                
+                # 同步锁
+                bucket_lock = threading.Lock()
+                
+                def process_bucket_and_generate(bucket_mapping):
+                    """处理单个桶映射并将文件信息生成为迭代器"""
+                    obs_bucket = bucket_mapping['obs_bucket']
+                    oss_bucket = bucket_mapping['oss_bucket']
+                    
+                    logger.info(f"开始处理桶映射：OBS桶={obs_bucket} -> OSS桶={oss_bucket}", module="migrate_manager")
+                    
+                    # 为当前桶映射创建OBS客户端
+                    obs_config = {
+                        'bucket_name': obs_bucket,
+                        'prefix': bucket_mapping['obs_prefix'],
+                        'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                    }
+                    
+                    obs_client = OBSClient(bucket_config=obs_config)
+                    
+                    # 列举当前桶中的文件（整个过程加锁，避免多桶输出交错）
+                    with self.console_lock:
+                        # 确保与之前的输出完全分离
+                        print(f"\n正在列举OBS桶 {obs_bucket} 中的文件...", end="", flush=True)
+                        files = list(obs_client.list_objects())
+                        file_count = len(files)
+                        # 先输出足够的空格清除当前行，再输出结果
+                        print(f"\r{' '*80}\r从OBS桶 {obs_bucket} 找到 {file_count} 个文件\n", end="", flush=True)
+                    logger.info(f"从OBS桶 {obs_bucket} 找到 {file_count} 个文件", module="migrate_manager")
+                    
+                    # 关闭OBS客户端
+                    obs_client.close()
+                    
+                    # 创建文件生成器
+                    def file_generator():
+                        for file_info in files:
+                            yield {
+                                'file_info': file_info,
+                                'bucket_mapping': bucket_mapping
+                            }
+                    
+                    # 存储生成器
+                    with bucket_lock:
+                        bucket_file_generators[obs_bucket] = file_generator()
+                
+                # 启动线程处理每个桶映射
                 for bucket_mapping in self.bucket_mappings:
                     thread = threading.Thread(
-                        target=self._process_bucket_mapping,
+                        target=process_bucket_and_generate,
                         args=(bucket_mapping,)
                     )
                     thread.daemon = True
@@ -335,10 +477,74 @@ class MigrateManager:
                     bucket_threads.append(thread)
                     logger.info(f"已启动桶映射线程：OBS桶={bucket_mapping['obs_bucket']} -> OSS桶={bucket_mapping['oss_bucket']}", module="migrate_manager")
                 
-                # 等待所有桶映射线程完成文件列举和任务添加
+                # 等待所有桶映射线程完成文件列举
                 logger.info("等待所有桶映射线程完成...", module="migrate_manager")
                 for thread in bucket_threads:
                     thread.join()
+                
+                # 从多个桶中均匀获取文件，应用文件限制
+                added_count = 0
+                buckets = list(bucket_file_generators.keys())
+                bucket_index = 0
+                
+                # 从每个桶中交替获取文件
+                while (self.file_limit is None or added_count < self.file_limit) and len(buckets) > 0:
+                    # 确保索引在有效范围内
+                    if bucket_index >= len(buckets):
+                        bucket_index = 0
+                    
+                    if len(buckets) == 0:
+                        # 所有桶都没有更多文件了
+                        break
+                    
+                    current_bucket = buckets[bucket_index]
+                    file_generator = bucket_file_generators[current_bucket]
+                    
+                    try:
+                        # 尝试从当前桶获取下一个文件
+                        file_info_with_mapping = next(file_generator)
+                        all_files_to_migrate.append(file_info_with_mapping)
+                        added_count += 1
+                        
+                        # 检查是否达到文件限制
+                        if self.file_limit is not None and added_count >= self.file_limit:
+                            logger.info(f"已达到文件数量限制({self.file_limit})，停止添加新文件", module="migrate_manager")
+                            break
+                    except StopIteration:
+                        # 当前桶没有更多文件了，从列表中移除
+                        buckets.pop(bucket_index)
+                        logger.info(f"OBS桶 {current_bucket} 的文件已全部处理完毕", module="migrate_manager")
+                        continue
+                    
+                    # 移动到下一个桶
+                    bucket_index = (bucket_index + 1) % len(buckets)
+                
+                # 将收集到的文件加入任务队列
+                logger.info(f"共收集到{len(all_files_to_migrate)}个文件，准备开始迁移...", module="migrate_manager")
+                
+                # 更新总文件数和按桶统计的总文件数
+                bucket_file_counts = {}
+                for file_info_with_mapping in all_files_to_migrate:
+                    bucket_mapping = file_info_with_mapping['bucket_mapping']
+                    bucket_name = bucket_mapping['obs_bucket']
+                    bucket_file_counts[bucket_name] = bucket_file_counts.get(bucket_name, 0) + 1
+                    
+                    # 将文件加入任务队列
+                    self.task_queue.put(file_info_with_mapping)
+                
+                # 更新总文件数和按桶统计的总文件数
+                with self.progress_lock:
+                    self.total_files = len(all_files_to_migrate)
+                    migrate_logger.update_total_files(self.total_files)
+                    
+                    # 初始化按桶统计的总文件数
+                    for bucket_name, count in bucket_file_counts.items():
+                        if bucket_name not in self.bucket_total_files:
+                            self.bucket_total_files[bucket_name] = 0
+                            self.bucket_processed_files[bucket_name] = 0
+                        self.bucket_total_files[bucket_name] += count
+                
+                logger.info(f"已将{len(all_files_to_migrate)}个文件加入任务队列", module="migrate_manager")
                 
                 # 所有文件列举完成后，启动进度监控线程
                 progress_thread = threading.Thread(target=self.monitor_progress)

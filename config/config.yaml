@@ -68,7 +68,7 @@ bucket_mappings:
     obs_prefix: ""          # OBS源路径前缀（可选）
     oss_prefix: ""          # OSS目标路径前缀（可选）
     exclude_suffixes: [".log", ".tmp"]  # 排除文件后缀（可选）
-  # # 示例映射：将obs-bucket-2的data/目录迁移到oss-bucket-2的migrated_data/目录
+  # 将obs桶hf-app-logs的文件迁移到oss桶log-test
   - obs_bucket: "hf-app-logs"
     oss_bucket: "log-test"
     obs_prefix: ""

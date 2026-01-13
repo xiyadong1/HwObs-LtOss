@@ -2,7 +2,6 @@
 * text=auto eol=lf
 
 # Log directories
-log/
 migrate_log/
 
 # Python cache
