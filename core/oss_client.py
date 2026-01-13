@@ -5,13 +5,12 @@
 负责OSS桶的连接和文件操作
 """
 
-import os
 import threading
 import datetime
 import hashlib
 import hmac
 import requests
-from urllib.parse import urlparse, quote_plus, quote
+from urllib.parse import urlparse, quote
 from log.logger import logger
 from config.config_loader import config_loader
 
@@ -45,7 +44,7 @@ class OSSClient:
         # 确保endpoint不包含协议前缀（后续构造URL时统一添加）
         if self.endpoint.startswith('http://') or self.endpoint.startswith('https://'):
             self.endpoint = urlparse(self.endpoint).netloc
-            logger.warning(f"OSS endpoint已移除协议前缀：{self.endpoint}", module="oss_client")
+            logger.info(f"OSS endpoint已移除协议前缀：{self.endpoint}", module="oss_client")
         
         # 获取并发配置
         concurrency_config = config_loader.get_concurrency_config()
@@ -302,7 +301,7 @@ class OSSClient:
                     return False, f"上传失败，状态码：{result.status}"
             else:
                 # 大文件分片上传功能暂未实现，先使用直接上传
-                logger.warning(f"文件大小超过{self.chunk_size}字节，暂不支持分片上传，将使用直接上传：{oss_path}", module="oss_client")
+                logger.info(f"文件大小超过{self.chunk_size}字节，暂不支持分片上传，将使用直接上传：{oss_path}", module="oss_client")
                 result = self._put_object(oss_path, content, content_length=file_size)
                 
                 if result.status == 200:

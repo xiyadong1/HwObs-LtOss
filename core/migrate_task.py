@@ -93,7 +93,8 @@ class MigrateTask:
         # 记录迁移结果
         status = "success" if success else "failed"
         migrate_logger.log_file_migrate(obs_path, self.oss_client.get_target_path(obs_path), 
-                                      file_size, duration, status, error_msg)
+                                      file_size, duration, status, error_msg, 
+                                      obs_bucket=self.obs_client.bucket_name)
         
         logger.info(f"文件迁移完成：{obs_path}，状态：{status}，耗时：{duration:.2f}秒", module="migrate_task")
         
@@ -168,7 +169,8 @@ class MigrateTask:
         # 记录迁移结果
         status = "success" if success else "failed"
         migrate_logger.log_file_migrate(obs_path, self.oss_client.get_target_path(obs_path), 
-                                      file_size, duration, status, error_msg)
+                                      file_size, duration, status, error_msg, 
+                                      obs_bucket=self.obs_client.bucket_name)
         
         logger.info(f"流式迁移完成：{obs_path}，状态：{status}，耗时：{duration:.2f}秒", module="migrate_task")
         
@@ -191,7 +193,9 @@ class MigrateTask:
         """
         # 获取并发配置
         concurrency_config = config_loader.get_concurrency_config()
-        streaming_threshold = concurrency_config.get('streaming_threshold', 5 * 1024 * 1024 * 10)  # 默认50MB
-        
+        streaming_threshold = concurrency_config.get(
+            'streaming_threshold', 5 * 1024 * 1024 * 10  # 默认50MB
+        )
+
         # 对于大于流式迁移阈值的文件，使用流式迁移
         return file_size > streaming_threshold

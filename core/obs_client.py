@@ -5,7 +5,6 @@
 负责OBS桶的连接和文件操作
 """
 
-import os
 import threading
 from obs import ObsClient as HuaweiObsClient
 from log.logger import logger

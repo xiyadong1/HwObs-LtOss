@@ -51,6 +51,9 @@ class MigrateManager:
         # 进度锁
         self.progress_lock = threading.Lock()
         
+        # 控制台输出锁，确保并发时输出不混乱
+        self.console_lock = threading.Lock()
+        
         # 优雅终止标志
         self.exit_flag = False
         
@@ -141,30 +144,74 @@ class MigrateManager:
                 
             except Exception as e:
                 logger.error(f"工作线程异常：{str(e)}", module="migrate_manager")
+                # 更新进度（异常情况下也计数）
+                with self.progress_lock:
+                    self.processed_files += 1
                 self.task_queue.task_done()
     
     def monitor_progress(self):
         """
         监控迁移进度
         """
-        while self.processed_files < self.total_files and not self.exit_flag:
+        start_time = time.time()
+        
+        while not self.exit_flag:
             with self.progress_lock:
                 processed = self.processed_files
+                current_total = self.total_files
             
-            percentage = (processed / self.total_files * 100) if self.total_files > 0 else 0
-            
-            # 控制台输出进度
-            print(f"\r迁移进度：{processed}/{self.total_files} ({percentage:.2f}%)", end="", flush=True)
+            if processed == 0:
+                if current_total == 0:
+                    # 正在列举文件，显示提示信息
+                    with self.console_lock:
+                        print("\r正在列举文件...", end="", flush=True)
+                else:
+                    # 已完成文件列举，但还没有开始处理文件
+                    with self.console_lock:
+                        print(f"\r已找到 {current_total} 个文件，准备开始迁移...", end="", flush=True)
+            else:
+                if current_total > 0:
+                    percentage = (processed / current_total * 100)
+                    elapsed_time = time.time() - start_time
+                    files_per_second = processed / elapsed_time
+                    remaining_files = current_total - processed
+                    remaining_time = remaining_files / files_per_second if files_per_second > 0 else 0
+                    
+                    # 格式化预计剩余时间
+                    if remaining_time < 60:
+                        eta = f"{remaining_time:.0f}秒"
+                    elif remaining_time < 3600:
+                        eta = f"{remaining_time/60:.0f}分钟"
+                    else:
+                        eta = f"{remaining_time/3600:.1f}小时"
+                    
+                    # 控制台输出详细进度信息
+                    progress_msg = f"\r迁移进度：{processed}/{current_total} ({percentage:.2f}%) | "
+                    progress_msg += f"速度：{files_per_second:.1f}文件/秒 | "
+                    progress_msg += f"预计完成时间：{eta}"
+                    with self.console_lock:
+                        print(progress_msg, end="", flush=True)
+                else:
+                    # 总文件数还在增加中，显示已处理的文件数
+                    with self.console_lock:
+                        print(f"\r已处理 {processed} 个文件，文件列举中...", end="", flush=True)
             
             # 日志记录进度
-            logger.info(f"迁移进度：{processed}/{self.total_files} ({percentage:.2f}%)", module="migrate_manager")
+            logger.info(f"迁移进度：{processed}/{current_total} ({(processed/current_total*100) if current_total>0 else 0:.2f}%)", module="migrate_manager")
             
             # 等待指定时间后再次更新进度
             time.sleep(self.progress_interval)
+            
+            # 检查是否所有任务都已完成
+            if self.task_queue.empty() and processed > 0 and processed == current_total:
+                break
         
         # 如果是因为退出标志而停止，输出终止信息
         if self.exit_flag:
-            print(f"\r迁移已终止，已处理：{self.processed_files}/{self.total_files}", flush=True)
+            with self.progress_lock:
+                current_processed = self.processed_files
+                current_total = self.total_files
+            print(f"\r迁移已终止，已处理：{current_processed}/{current_total}", flush=True)
     
     def _process_bucket_mapping(self, bucket_mapping):
         """
@@ -188,10 +235,14 @@ class MigrateManager:
             
             obs_client = OBSClient(bucket_config=obs_config)
             
-            # 列举当前桶中的文件
-            files = list(obs_client.list_objects())
-            file_count = len(files)
-            
+            # 列举当前桶中的文件（整个过程加锁，避免多桶输出交错）
+            with self.console_lock:
+                # 确保与之前的输出完全分离
+                print(f"\n正在列举OBS桶 {obs_bucket} 中的文件...", end="", flush=True)
+                files = list(obs_client.list_objects())
+                file_count = len(files)
+                # 先输出足够的空格清除当前行，再输出结果
+                print(f"\r{' '*80}\r从OBS桶 {obs_bucket} 找到 {file_count} 个文件\n", end="", flush=True)
             logger.info(f"从OBS桶 {obs_bucket} 找到 {file_count} 个文件", module="migrate_manager")
             
             # 关闭OBS客户端
@@ -228,6 +279,9 @@ class MigrateManager:
         """
         开始迁移任务
         """
+        # 控制台输出启动信息
+        print("华为云OBS→联通云OSS批量迁移工具启动")
+        print("=" * 60)
         logger.info("开始批量迁移任务", module="migrate_manager")
         self.start_time = time.time()
         
@@ -247,11 +301,6 @@ class MigrateManager:
                 thread.daemon = True
                 thread.start()
                 self.threads.append(thread)
-            
-            # 启动进度监控线程
-            progress_thread = threading.Thread(target=self.monitor_progress)
-            progress_thread.daemon = True
-            progress_thread.start()
             
             if self.bucket_mappings:
                 # 多桶并行迁移模式
@@ -274,20 +323,33 @@ class MigrateManager:
                 for thread in bucket_threads:
                     thread.join()
                 
+                # 所有文件列举完成后，启动进度监控线程
+                progress_thread = threading.Thread(target=self.monitor_progress)
+                progress_thread.daemon = True
+                progress_thread.start()
+                
             else:
                 # 单桶迁移模式（向后兼容）
                 logger.info("开始单桶迁移...", module="migrate_manager")
                 from core.obs_client import get_obs_client
                 
                 obs_client = get_obs_client()
+                with self.console_lock:
+                    print(f"正在列举OBS桶 {obs_client.bucket_name} 中的文件...", end="", flush=True)
                 files = list(obs_client.list_objects())
                 file_count = len(files)
-                
+                with self.console_lock:
+                    print(f"\r从OBS桶 {obs_client.bucket_name} 找到 {file_count} 个文件\n", end="", flush=True)
                 logger.info(f"从OBS桶 {obs_client.bucket_name} 找到 {file_count} 个文件", module="migrate_manager")
                 
                 # 更新总文件数
                 self.total_files = file_count
                 migrate_logger.update_total_files(self.total_files)
+                
+                # 文件列举完成后，启动进度监控线程
+                progress_thread = threading.Thread(target=self.monitor_progress)
+                progress_thread.daemon = True
+                progress_thread.start()
                 
                 # 为每个文件创建默认的桶映射信息
                 default_bucket_mapping = {
@@ -381,6 +443,45 @@ class MigrateManager:
         
         report = migrate_logger.generate_daily_report()
         
+        # 控制台输出详细汇总信息
+        print("\n" + "=" * 60)
+        print("迁移任务完成！")
+        print("=" * 60)
+        
+        # 全局汇总
+        print(f"总迁移文件数：{report.get('total_files')}")
+        print(f"成功迁移数：{report.get('success_files')}")
+        print(f"失败迁移数：{report.get('failed_files')}")
+        print(f"总耗时：{total_duration:.2f}秒")
+        print(f"平均速度：{report.get('total_files')/total_duration:.1f}文件/秒")
+        print()
+        
+        # 按桶汇总
+        bucket_stats = report.get('bucket_stats', {})
+        if bucket_stats:
+            print("按桶迁移统计：")
+            print("-" * 40)
+            print("{:<20} {:<8} {:<8} {:<8} {:<10}".format("桶名称", "总数", "成功", "失败", "成功率"))
+            print("-" * 40)
+            
+            for bucket_name, stats in bucket_stats.items():
+                total = stats.get('total', 0)
+                success = stats.get('success', 0)
+                failed = stats.get('failed', 0)
+                success_rate = (success / total * 100) if total > 0 else 0
+                print("{:<20} {:<8} {:<8} {:<8} {:<10.1f}%".format(
+                    bucket_name, total, success, failed, success_rate))
+            print("-" * 40)
+        
+        # 失败文件信息
+        if report.get('failed_files', 0) > 0:
+            print()
+            print(f"失败文件清单已保存至：./migrate_log/failed_{report.get('date')}.txt")
+            print(f"可使用重试脚本重新迁移失败文件")
+        
+        print("\n" + "=" * 60)
+        
+        # 日志记录详细信息
         logger.info("=" * 60, module="migrate_manager")
         logger.info("迁移任务完成！", module="migrate_manager")
         logger.info(f"总迁移文件数：{report.get('total_files')}", module="migrate_manager")
