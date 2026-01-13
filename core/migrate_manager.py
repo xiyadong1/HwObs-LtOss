@@ -48,6 +48,10 @@ class MigrateManager:
         self.processed_files = 0
         self.start_time = None
         
+        # 按桶统计进度信息
+        self.bucket_total_files = {}  # 存储每个桶的总文件数
+        self.bucket_processed_files = {}  # 存储每个桶的已处理文件数
+        
         # 进度锁
         self.progress_lock = threading.Lock()
         
@@ -135,9 +139,12 @@ class MigrateManager:
                 obs_client.close()
                 oss_client.close()
                 
-                # 更新进度
+                # 更新进度（成功情况）
                 with self.progress_lock:
                     self.processed_files += 1
+                    # 获取当前桶名称并更新该桶的进度
+                    bucket_name = bucket_mapping['obs_bucket']
+                    self.bucket_processed_files[bucket_name] = self.bucket_processed_files.get(bucket_name, 0) + 1
                 
                 # 标记任务完成
                 self.task_queue.task_done()
@@ -147,6 +154,10 @@ class MigrateManager:
                 # 更新进度（异常情况下也计数）
                 with self.progress_lock:
                     self.processed_files += 1
+                    # 获取当前桶名称并更新该桶的进度
+                    if 'bucket_mapping' in locals():
+                        bucket_name = bucket_mapping['obs_bucket']
+                        self.bucket_processed_files[bucket_name] = self.bucket_processed_files.get(bucket_name, 0) + 1
                 self.task_queue.task_done()
     
     def monitor_progress(self):
@@ -256,10 +267,16 @@ class MigrateManager:
                     'bucket_mapping': bucket_mapping
                 })
             
-            # 更新总文件数
+            # 更新总文件数和按桶统计的总文件数
             with self.progress_lock:
                 self.total_files += file_count
                 migrate_logger.update_total_files(self.total_files)
+                # 初始化当前桶的统计信息
+                if obs_bucket not in self.bucket_total_files:
+                    self.bucket_total_files[obs_bucket] = 0
+                    self.bucket_processed_files[obs_bucket] = 0
+                # 更新当前桶的总文件数
+                self.bucket_total_files[obs_bucket] += file_count
             
             # 将当前桶映射的文件加入任务队列
             for task_info in bucket_files_to_migrate:
