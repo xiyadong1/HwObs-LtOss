@@ -74,7 +74,9 @@ class OBSClient:
                 # 修复参数名：使用bucketName而不是Bucket（华为云SDK使用驼峰命名）
                 resp = self.client.listObjects(
                     bucketName=self.bucket_name,
-                    prefix=self.prefix
+                    prefix=self.prefix,
+                    marker=marker,
+                    max_keys=max_keys
                 )
                 
                 if resp.status < 300:
@@ -100,9 +102,24 @@ class OBSClient:
                             }
                     
                     # 检查是否还有更多文件
-                    if hasattr(resp.body, 'nextMarker') and resp.body.nextMarker:
-                        marker = resp.body.nextMarker
-                    else:
+                    has_more = False
+                    if hasattr(resp.body, 'is_truncated') and resp.body.is_truncated:
+                        has_more = True
+                    
+                    if has_more:
+                        # 获取下一个marker
+                        if hasattr(resp.body, 'next_marker'):
+                            marker = resp.body.next_marker
+                        elif hasattr(resp.body, 'nextMarker'):
+                            marker = resp.body.nextMarker
+                        else:
+                            # 如果没有marker，使用最后一个文件的key
+                            if resp.body.contents:
+                                marker = resp.body.contents[-1].key
+                            else:
+                                has_more = False
+                    
+                    if not has_more:
                         break
                 else:
                     logger.error(f"OBS列举文件失败：{resp.errorMessage}", module="obs_client")
