@@ -86,6 +86,7 @@ class MigrateLogger:
             else:
                 self.failed_files += 1
                 self.failed_list.append({
+                    "obs_bucket": obs_bucket,
                     "obs_path": obs_path,
                     "error_msg": error_msg
                 })
@@ -158,7 +159,11 @@ class MigrateLogger:
             failed_file = os.path.join(self.log_path, f'failed_{self.today}.txt')
             with open(failed_file, 'w', encoding='utf-8') as f:
                 for item in self.failed_list:
-                    f.write(f"{item['obs_path']}\t{item['error_msg']}\n")
+                    # 格式化输出：桶名称/文件对象名称	错误信息
+                    # 处理没有obs_bucket字段的情况（兼容旧数据）
+                    obs_bucket = item.get('obs_bucket', 'unknown')
+                    formatted_path = f"{obs_bucket}/{item['obs_path']}"
+                    f.write(f"{formatted_path}\t{item['error_msg']}\n")
         
         return report
     
@@ -182,11 +187,30 @@ class MigrateLogger:
             with open(failed_file, 'r', encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
-                        obs_path, error_msg = line.strip().split('\t', 1)
-                        failed_list.append({
-                            "obs_path": obs_path,
-                            "error_msg": error_msg
-                        })
+                        try:
+                            # 解析行内容
+                            obs_path_with_bucket, error_msg = line.strip().split('\t', 1)
+                            
+                            # 提取桶名称和文件路径
+                            if '/' in obs_path_with_bucket:
+                                obs_bucket, obs_path = obs_path_with_bucket.split('/', 1)
+                            else:
+                                # 兼容旧格式（没有桶信息）
+                                obs_bucket = "unknown"
+                                obs_path = obs_path_with_bucket
+                            
+                            failed_list.append({
+                                "obs_bucket": obs_bucket,
+                                "obs_path": obs_path,
+                                "error_msg": error_msg
+                            })
+                        except ValueError:
+                            # 处理格式不正确的行
+                            failed_list.append({
+                                "obs_bucket": "unknown",
+                                "obs_path": line.strip(),
+                                "error_msg": "格式错误"
+                            })
         
         return failed_list
 

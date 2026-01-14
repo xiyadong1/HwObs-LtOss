@@ -74,6 +74,11 @@ bucket_mappings:
     obs_prefix: ""
     oss_prefix: ""
     exclude_suffixes: []
+  - obs_bucket: "healthy-code-new"
+    oss_bucket: "test-1"
+    obs_prefix: ""
+    oss_prefix: ""
+    exclude_suffixes: []
 
 # 迁移配置
 migrate:

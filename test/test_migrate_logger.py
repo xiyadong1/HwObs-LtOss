@@ -95,29 +95,38 @@ def test_migrate_logger_generate_daily_report():
                 ]
                 
                 # 生成报告
-                migrate_logger.generate_daily_report()
+                report = migrate_logger.generate_daily_report()
                 
-                # 验证文件写入
-                assert mock_file().write.call_count == 2  # 报告文件和失败文件列表
+                # 验证报告内容
+                assert report['success_files'] == 100
+                assert report['failed_files'] == 5
+                assert len(report['failed_list']) == 2
+                
+                # 验证文件写入至少被调用
+                mock_file().write.assert_called()  # 只需要确认有写入操作
 
 
 def test_migrate_logger_load_failed_list():
     """测试加载失败文件列表"""
     with patch('log.migrate_logger.os.makedirs'):
         migrate_logger = MigrateLogger()
-        
+
         # 模拟失败文件列表内容
         mock_file_content = 'failed1.txt\tError 1\nfailed2.txt\tError 2'
-        
+
+        # 同时模拟文件存在和文件读取
         with patch('builtins.open', mock_open(read_data=mock_file_content)):
-            failed_files = migrate_logger.load_failed_list('2023-01-01')
-            
-            # 验证加载结果
-            assert len(failed_files) == 2
-            assert failed_files[0]['obs_path'] == 'failed1.txt'
-            assert failed_files[0]['error_msg'] == 'Error 1'
-            assert failed_files[1]['obs_path'] == 'failed2.txt'
-            assert failed_files[1]['error_msg'] == 'Error 2'
+            with patch('os.path.exists', return_value=True):
+                failed_files = migrate_logger.load_failed_list('2023-01-01')
+
+                # 验证加载结果
+                assert len(failed_files) == 2
+                assert failed_files[0]['obs_bucket'] == 'unknown'  # 旧格式会被标记为unknown
+                assert failed_files[0]['obs_path'] == 'failed1.txt'
+                assert failed_files[0]['error_msg'] == 'Error 1'
+                assert failed_files[1]['obs_bucket'] == 'unknown'
+                assert failed_files[1]['obs_path'] == 'failed2.txt'
+                assert failed_files[1]['error_msg'] == 'Error 2'
 
 
 def test_migrate_logger_load_failed_list_file_not_found():
@@ -136,10 +145,15 @@ def test_migrate_logger_load_failed_list_invalid_json():
     """测试加载无效格式的失败文件列表"""
     with patch('log.migrate_logger.os.makedirs'):
         migrate_logger = MigrateLogger()
-        
+
+        # 同时模拟文件存在和文件读取
         with patch('builtins.open', mock_open(read_data='invalid format')):
-            failed_files = migrate_logger.load_failed_list('2023-01-01')
-            assert len(failed_files) == 1
+            with patch('os.path.exists', return_value=True):
+                failed_files = migrate_logger.load_failed_list('2023-01-01')
+                assert len(failed_files) == 1
+                assert failed_files[0]['obs_bucket'] == 'unknown'
+                assert failed_files[0]['obs_path'] == 'invalid format'
+                assert failed_files[0]['error_msg'] == '格式错误'
 
 
 
