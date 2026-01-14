@@ -1,0 +1,10 @@
+# 自定义OSS配置文件
+oss:
+  endpoint: "obs-tj.cucloud.cn"
+  access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
+  secret_key: "A6170506D4614680AEB9AC143C0818F38675"
+  region: "obs-tj"
+  
+concurrency:
+  chunk_size: 5242880  # 5MB
+

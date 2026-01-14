@@ -63,13 +63,13 @@ oss:
 # 多桶映射配置（优先级高于单独的obs/oss配置）
 bucket_mappings:
   # 示例映射：将obs-bucket-1的文件迁移到oss-bucket-1
-  - obs_bucket: "hydrogen-energy"
+  - obs_bucket: "chat-ai"
     oss_bucket: "hf-test"
     obs_prefix: ""          # OBS源路径前缀（可选）
     oss_prefix: ""          # OSS目标路径前缀（可选）
     exclude_suffixes: [".log", ".tmp"]  # 排除文件后缀（可选）
   # 将obs桶hf-app-logs的文件迁移到oss桶log-test
-  - obs_bucket: "hf-app-logs"
+  - obs_bucket: "oiltax-wxapp-new"
     oss_bucket: "log-test"
     obs_prefix: ""
     oss_prefix: ""
