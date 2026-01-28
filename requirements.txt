@@ -4,8 +4,15 @@ esdk-obs-python==3.24.12
 # 联通云OSS SDK (基于阿里云SDK)
 oss2==2.18.1
 
+# HTTP 请求库
+requests==2.31.0
+
 # 配置管理
 python-dotenv==1.0.0
+pyyaml==6.0
+
+# AWS SDK (用于 ACL 工具)
+botocore==1.34.10
 
 # 单元测试
 pytest==7.4.0
