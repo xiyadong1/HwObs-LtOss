@@ -13,6 +13,7 @@ from log.logger import logger
 from log.migrate_logger import migrate_logger
 from core.obs_client import OBSClient
 from core.oss_client import OSSClient
+from core.aliyun_oss_client import AliyunOSSClient
 from core.migrate_task import MigrateTask
 from config.config_loader import config_loader
 
@@ -117,20 +118,32 @@ class MigrateManager:
                 bucket_mapping = task_info['bucket_mapping']
                 
                 # 为每个任务创建独立的客户端实例
-                obs_config = {
-                    'bucket_name': bucket_mapping['obs_bucket'],
-                    'prefix': bucket_mapping['obs_prefix'],
-                    'exclude_suffixes': bucket_mapping['exclude_suffixes']
-                }
-                
                 oss_config = {
                     'bucket_name': bucket_mapping['oss_bucket'],
                     'target_prefix': bucket_mapping['oss_prefix']
                 }
                 
-                obs_client = OBSClient(bucket_config=obs_config)
+                # 根据源类型选择对应的客户端
+                source_type = bucket_mapping.get('source_type', 'obs')  # 默认使用华为云OBS
+                if source_type == 'aliyun':
+                    # 使用阿里云OSS客户端
+                    aliyun_config = {
+                        'bucket_name': bucket_mapping['source_bucket'],
+                        'prefix': bucket_mapping['source_prefix'],
+                        'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                    }
+                    source_client = AliyunOSSClient(bucket_config=aliyun_config)
+                else:
+                    # 使用华为云OBS客户端
+                    obs_config = {
+                        'bucket_name': bucket_mapping['source_bucket'],
+                        'prefix': bucket_mapping['source_prefix'],
+                        'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                    }
+                    source_client = OBSClient(bucket_config=obs_config)
+                
                 oss_client = OSSClient(bucket_config=oss_config)
-                migrate_task = MigrateTask(obs_client=obs_client, oss_client=oss_client)
+                migrate_task = MigrateTask(obs_client=source_client, oss_client=oss_client)
                 
                 # 根据文件大小选择合适的迁移方法
                 file_size = file_info.get('size', 0)
@@ -142,14 +155,14 @@ class MigrateManager:
                     migrate_task.migrate_file(file_info)
                 
                 # 关闭客户端连接
-                obs_client.close()
+                source_client.close()
                 oss_client.close()
                 
                 # 更新进度（成功情况）
                 with self.progress_lock:
                     self.processed_files += 1
                     # 获取当前桶名称并更新该桶的进度
-                    bucket_name = bucket_mapping['obs_bucket']
+                    bucket_name = bucket_mapping.get('source_bucket', bucket_mapping.get('obs_bucket'))
                     self.bucket_processed_files[bucket_name] = self.bucket_processed_files.get(bucket_name, 0) + 1
                 
                 # 标记任务完成
@@ -162,7 +175,8 @@ class MigrateManager:
                     self.processed_files += 1
                     # 获取当前桶名称并更新该桶的进度
                     if 'bucket_mapping' in locals():
-                        bucket_name = bucket_mapping['obs_bucket']
+                        # 根据源类型获取桶名称
+                        bucket_name = bucket_mapping.get('source_bucket', bucket_mapping.get('obs_bucket'))
                         self.bucket_processed_files[bucket_name] = self.bucket_processed_files.get(bucket_name, 0) + 1
                 self.task_queue.task_done()
     
@@ -238,7 +252,7 @@ class MigrateManager:
                             
                             # 构建进度信息
                             progress_lines = []
-                            progress_lines.append(f"华为云OBS→联通云OSS批量迁移工具")
+                            progress_lines.append(f"云存储→联通云OSS批量迁移工具")
                             progress_lines.append("=" * 50)
                             progress_lines.append(f"")
                             
@@ -302,33 +316,42 @@ class MigrateManager:
         Args:
             bucket_mapping (dict): 桶映射配置
         """
-        obs_bucket = bucket_mapping['obs_bucket']
+        # 根据源类型获取源桶名称
+        source_type = bucket_mapping.get('source_type', 'obs')
+        source_bucket = bucket_mapping.get('source_bucket', bucket_mapping.get('obs_bucket'))
         oss_bucket = bucket_mapping['oss_bucket']
         
         try:
-            logger.info(f"开始处理桶映射：OBS桶={obs_bucket} -> OSS桶={oss_bucket}", module="migrate_manager")
+            logger.info(f"开始处理桶映射：{source_type}桶={source_bucket} -> OSS桶={oss_bucket}", module="migrate_manager")
             
-            # 为当前桶映射创建OBS客户端
-            obs_config = {
-                'bucket_name': obs_bucket,
-                'prefix': bucket_mapping['obs_prefix'],
-                'exclude_suffixes': bucket_mapping['exclude_suffixes']
-            }
-            
-            obs_client = OBSClient(bucket_config=obs_config)
+            # 为当前桶映射创建对应的源客户端
+            if source_type == 'aliyun':
+                source_config = {
+                    'bucket_name': source_bucket,
+                    'prefix': bucket_mapping.get('source_prefix', bucket_mapping.get('obs_prefix', '')),
+                    'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                }
+                source_client = AliyunOSSClient(bucket_config=source_config)
+            else:
+                source_config = {
+                    'bucket_name': source_bucket,
+                    'prefix': bucket_mapping.get('source_prefix', bucket_mapping.get('obs_prefix', '')),
+                    'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                }
+                source_client = OBSClient(bucket_config=source_config)
             
             # 列举当前桶中的文件（整个过程加锁，避免多桶输出交错）
             with self.console_lock:
                 # 确保与之前的输出完全分离
-                print(f"\n正在列举OBS桶 {obs_bucket} 中的文件...", end="", flush=True)
-                files = list(obs_client.list_objects())
+                print(f"\n正在列举{source_type}桶 {source_bucket} 中的文件...", end="", flush=True)
+                files = list(source_client.list_objects())
                 file_count = len(files)
                 # 先输出足够的空格清除当前行，再输出结果
-                print(f"\r{' '*80}\r从OBS桶 {obs_bucket} 找到 {file_count} 个文件\n", end="", flush=True)
-            logger.info(f"从OBS桶 {obs_bucket} 找到 {file_count} 个文件", module="migrate_manager")
+                print(f"\r{' '*80}\r从{source_type}桶 {source_bucket} 找到 {file_count} 个文件\n", end="", flush=True)
+            logger.info(f"从{source_type}桶 {source_bucket} 找到 {file_count} 个文件", module="migrate_manager")
             
-            # 关闭OBS客户端
-            obs_client.close()
+            # 关闭源客户端
+            source_client.close()
             
             # 将文件信息和桶映射信息一起保存，同时应用文件限制
             bucket_files_to_migrate = []
@@ -360,11 +383,11 @@ class MigrateManager:
                 self.total_files += actual_count
                 migrate_logger.update_total_files(self.total_files)
                 # 初始化当前桶的统计信息
-                if obs_bucket not in self.bucket_total_files:
-                    self.bucket_total_files[obs_bucket] = 0
-                    self.bucket_processed_files[obs_bucket] = 0
+                if source_bucket not in self.bucket_total_files:
+                    self.bucket_total_files[source_bucket] = 0
+                    self.bucket_processed_files[source_bucket] = 0
                 # 更新当前桶的总文件数
-                self.bucket_total_files[obs_bucket] += actual_count
+                self.bucket_total_files[source_bucket] += actual_count
             
             # 将当前桶映射的文件加入任务队列
             for task_info in bucket_files_to_migrate:
@@ -427,32 +450,41 @@ class MigrateManager:
                 
                 def process_bucket_and_generate(bucket_mapping):
                     """处理单个桶映射并将文件信息生成为迭代器"""
-                    obs_bucket = bucket_mapping['obs_bucket']
+                    # 根据源类型获取源桶名称
+                    source_type = bucket_mapping.get('source_type', 'obs')
+                    source_bucket = bucket_mapping.get('source_bucket', bucket_mapping.get('obs_bucket'))
                     oss_bucket = bucket_mapping['oss_bucket']
                     
-                    logger.info(f"开始处理桶映射：OBS桶={obs_bucket} -> OSS桶={oss_bucket}", module="migrate_manager")
+                    logger.info(f"开始处理桶映射：{source_type}桶={source_bucket} -> OSS桶={oss_bucket}", module="migrate_manager")
                     
-                    # 为当前桶映射创建OBS客户端
-                    obs_config = {
-                        'bucket_name': obs_bucket,
-                        'prefix': bucket_mapping['obs_prefix'],
-                        'exclude_suffixes': bucket_mapping['exclude_suffixes']
-                    }
-                    
-                    obs_client = OBSClient(bucket_config=obs_config)
+                    # 为当前桶映射创建对应的源客户端
+                    if source_type == 'aliyun':
+                        source_config = {
+                            'bucket_name': source_bucket,
+                            'prefix': bucket_mapping.get('source_prefix', bucket_mapping.get('obs_prefix', '')),
+                            'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                        }
+                        source_client = AliyunOSSClient(bucket_config=source_config)
+                    else:
+                        source_config = {
+                            'bucket_name': source_bucket,
+                            'prefix': bucket_mapping.get('source_prefix', bucket_mapping.get('obs_prefix', '')),
+                            'exclude_suffixes': bucket_mapping['exclude_suffixes']
+                        }
+                        source_client = OBSClient(bucket_config=source_config)
                     
                     # 列举当前桶中的文件（整个过程加锁，避免多桶输出交错）
                     with self.console_lock:
                         # 确保与之前的输出完全分离
-                        print(f"\n正在列举OBS桶 {obs_bucket} 中的文件...", end="", flush=True)
-                        files = list(obs_client.list_objects())
+                        print(f"\n正在列举{source_type}桶 {source_bucket} 中的文件...", end="", flush=True)
+                        files = list(source_client.list_objects())
                         file_count = len(files)
                         # 先输出足够的空格清除当前行，再输出结果
-                        print(f"\r{' '*80}\r从OBS桶 {obs_bucket} 找到 {file_count} 个文件\n", end="", flush=True)
-                    logger.info(f"从OBS桶 {obs_bucket} 找到 {file_count} 个文件", module="migrate_manager")
+                        print(f"\r{' '*80}\r从{source_type}桶 {source_bucket} 找到 {file_count} 个文件\n", end="", flush=True)
+                    logger.info(f"从{source_type}桶 {source_bucket} 找到 {file_count} 个文件", module="migrate_manager")
                     
-                    # 关闭OBS客户端
-                    obs_client.close()
+                    # 关闭源客户端
+                    source_client.close()
                     
                     # 创建文件生成器
                     def file_generator():
@@ -464,7 +496,7 @@ class MigrateManager:
                     
                     # 存储生成器
                     with bucket_lock:
-                        bucket_file_generators[obs_bucket] = file_generator()
+                        bucket_file_generators[source_bucket] = file_generator()
                 
                 # 启动线程处理每个桶映射
                 for bucket_mapping in self.bucket_mappings:
@@ -475,7 +507,9 @@ class MigrateManager:
                     thread.daemon = True
                     thread.start()
                     bucket_threads.append(thread)
-                    logger.info(f"已启动桶映射线程：OBS桶={bucket_mapping['obs_bucket']} -> OSS桶={bucket_mapping['oss_bucket']}", module="migrate_manager")
+                    source_type = bucket_mapping.get('source_type', 'obs')
+                    source_bucket = bucket_mapping.get('source_bucket', bucket_mapping.get('obs_bucket'))
+                    logger.info(f"已启动桶映射线程：{source_type}桶={source_bucket} -> OSS桶={bucket_mapping['oss_bucket']}", module="migrate_manager")
                 
                 # 等待所有桶映射线程完成文件列举
                 logger.info("等待所有桶映射线程完成...", module="migrate_manager")
@@ -526,7 +560,7 @@ class MigrateManager:
                 bucket_file_counts = {}
                 for file_info_with_mapping in all_files_to_migrate:
                     bucket_mapping = file_info_with_mapping['bucket_mapping']
-                    bucket_name = bucket_mapping['obs_bucket']
+                    bucket_name = bucket_mapping.get('source_bucket', bucket_mapping.get('obs_bucket'))
                     bucket_file_counts[bucket_name] = bucket_file_counts.get(bucket_name, 0) + 1
                     
                     # 将文件加入任务队列

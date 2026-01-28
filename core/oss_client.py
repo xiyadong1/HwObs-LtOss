@@ -290,7 +290,7 @@ class OSSClient:
                 # 验证上传结果
                 if result.status == 200:
                     uploaded_etag = result.etag.strip('"')
-                    if uploaded_etag == etag:
+                    if uploaded_etag.lower() == etag.lower():
                         logger.info(f"文件上传成功：{oss_path}", module="oss_client")
                         return True, ""
                     else:
@@ -306,7 +306,7 @@ class OSSClient:
                 
                 if result.status == 200:
                     uploaded_etag = result.etag.strip('"')
-                    if uploaded_etag == etag:
+                    if uploaded_etag.lower() == etag.lower():
                         logger.info(f"大文件上传成功：{oss_path}", module="oss_client")
                         return True, ""
                     else:

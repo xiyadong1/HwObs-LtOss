@@ -3,7 +3,7 @@
 # 迁移配置
 migrate:
   # 进度更新间隔（秒）
-  progress_interval: 2
+  progress_interval: 1
 
 # 并发配置
 concurrency:
@@ -26,7 +26,7 @@ log:
   # 日志路径
   path: ./migrate_log/
   # 日志级别（DEBUG/INFO/WARNING/ERROR/CRITICAL）
-  level: INFO
+  level: DEBUG
   # 日志文件最大大小（MB）
   max_size: 100
   # 日志文件保留天数
@@ -38,6 +38,17 @@ obs:
   bucket_name: "hydrogen-energy"
   # OBS endpoint
   endpoint: "https://obs.cn-southwest-2.myhuaweicloud.com"
+  # 文件前缀过滤（可选）
+  prefix: ""
+  # 排除文件后缀列表（可选）
+  exclude_suffixes: [".log", ".tmp"]
+
+# 阿里云OSS配置
+aliyun:
+  # OSS桶名
+  bucket_name: "aliyun-test-bucket"
+  # OSS endpoint
+  endpoint: "oss-cn-shanghai.aliyuncs.com"
   # 文件前缀过滤（可选）
   prefix: ""
   # 排除文件后缀列表（可选）
@@ -62,23 +73,34 @@ oss:
 
 # 多桶映射配置（优先级高于单独的obs/oss配置）
 bucket_mappings:
-  # 示例映射：将obs-bucket-1的文件迁移到oss-bucket-1
-  - obs_bucket: "chat-ai"
+  # 华为云OBS示例映射：将obs-bucket-1的文件迁移到oss-bucket-1
+  # - source_type: "obs"
+  #   source_bucket: "chat-ai"
+  #   oss_bucket: "hf-test"
+  #   source_prefix: ""          # OBS源路径前缀（可选）
+  #   oss_prefix: ""          # OSS目标路径前缀（可选）
+  #   exclude_suffixes: [".log", ".tmp"]  # 排除文件后缀（可选）
+  # # 华为云OBS示例映射：将obs桶hf-app-logs的文件迁移到oss桶log-test
+  # - source_type: "obs"
+  #   source_bucket: "oiltax-wxapp-new"
+  #   oss_bucket: "log-test"
+  #   source_prefix: ""
+  #   oss_prefix: ""
+  #   exclude_suffixes: []
+  # 华为云OBS示例映射：将obs桶healthy-code-new的文件迁移到oss桶test-1
+  - source_type: "obs"
+    source_bucket: "healthy-code-new"
     oss_bucket: "hf-test"
-    obs_prefix: ""          # OBS源路径前缀（可选）
-    oss_prefix: ""          # OSS目标路径前缀（可选）
-    exclude_suffixes: [".log", ".tmp"]  # 排除文件后缀（可选）
-  # 将obs桶hf-app-logs的文件迁移到oss桶log-test
-  - obs_bucket: "oiltax-wxapp-new"
-    oss_bucket: "log-test"
-    obs_prefix: ""
+    source_prefix: ""
     oss_prefix: ""
     exclude_suffixes: []
-  - obs_bucket: "healthy-code-new"
-    oss_bucket: "test-1"
-    obs_prefix: ""
-    oss_prefix: ""
-    exclude_suffixes: []
+  # 阿里云OSS示例映射：将aliyun-bucket的文件迁移到oss-bucket
+  # - source_type: "aliyun"
+  #   source_bucket: "sdjyrecord"
+  #   oss_bucket: "test-1"
+  #   source_prefix: ""
+  #   oss_prefix: ""
+  #   exclude_suffixes: []
 
 # 迁移配置
 migrate:

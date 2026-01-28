@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-华为云OBS到联通云OSS批量迁移工具启动脚本
+云存储到联通云OSS批量迁移工具启动脚本（支持华为云OBS和阿里云OSS）
 """
 
 import sys
@@ -25,17 +25,15 @@ def main():
     主函数
     """
     try:
-        logger.info("华为云OBS→联通云OSS批量迁移工具启动", module="main")
+        logger.info("云存储→联通云OSS批量迁移工具启动", module="main")
         
         # 解析命令行参数
-        parser = argparse.ArgumentParser(description="华为云OBS到联通云OSS批量迁移工具")
+        parser = argparse.ArgumentParser(description="云存储到联通云OSS批量迁移工具（支持华为云OBS和阿里云OSS）")
         parser.add_argument('--limit', type=int, default=None, help='限制迁移的文件数量，用于测试')
         args = parser.parse_args()
         
         # 检查环境变量是否配置
         required_env_vars = [
-            'OBS_ACCESS_KEY',
-            'OBS_SECRET_KEY',
             'OSS_ACCESS_KEY',
             'OSS_SECRET_KEY'
         ]
@@ -60,7 +58,7 @@ def main():
             migrate_manager.file_limit = args.limit
         migrate_manager.start_migration()
         
-        logger.info("华为云OBS→联通云OSS批量迁移工具执行完成", module="main")
+        logger.info("云存储→联通云OSS批量迁移工具执行完成", module="main")
         sys.exit(0)
         
     except KeyboardInterrupt:

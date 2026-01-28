@@ -322,7 +322,7 @@ class OSSClient:
                 
                 if response.status_code == 200:
                     uploaded_etag = response.headers.get('ETag', '').strip('"')
-                    if uploaded_etag == etag:
+                    if uploaded_etag.lower() == etag.lower():
                         logger.info(f"文件上传成功: {local_file} -> {oss_path}")
                         return True
                     else:

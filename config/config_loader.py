@@ -42,6 +42,16 @@ class ConfigLoader:
         # 从环境变量加载联通云OSS认证信息
         self.config['oss']['access_key'] = os.getenv('OSS_ACCESS_KEY')
         self.config['oss']['secret_key'] = os.getenv('OSS_SECRET_KEY')
+        
+        # 从环境变量加载阿里云OSS认证信息
+        if 'aliyun' in self.config:
+            env_access_key = os.getenv('ALIYUN_ACCESS_KEY')
+            if env_access_key:
+                self.config['aliyun']['access_key'] = env_access_key
+                
+            env_secret_key = os.getenv('ALIYUN_SECRET_KEY')
+            if env_secret_key:
+                self.config['aliyun']['secret_key'] = env_secret_key
     
     def get(self, key_path, default=None):
         """
@@ -127,6 +137,15 @@ class ConfigLoader:
             list: 桶映射列表
         """
         return self.config.get('bucket_mappings', [])
+    
+    def get_aliyun_config(self):
+        """
+        获取阿里云OSS配置
+        
+        Returns:
+            dict: 阿里云OSS配置字典
+        """
+        return self.config.get('aliyun', {})
 
 
 # 单例模式
