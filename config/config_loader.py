@@ -146,6 +146,15 @@ class ConfigLoader:
             dict: 阿里云OSS配置字典
         """
         return self.config.get('aliyun', {})
+    
+    def get_acl_config(self):
+        """
+        获取 ACL 工具配置
+        
+        Returns:
+            dict: ACL 工具配置字典
+        """
+        return self.config.get('acl', {})
 
 
 # 单例模式
