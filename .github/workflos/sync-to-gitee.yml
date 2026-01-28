@@ -28,7 +28,7 @@ jobs:
           # 你的 Gitee 目标仓库地址（已替换为你提供的地址）
           destination-repo: "git@gitee.com:xiyadong/HwObs-LtOss.git"
 
-      # 可选：如果你的 Gitee 仓库需要部署 Pages，保留这段；不需要则删除1111
+      # 可选：如果你的 Gitee 仓库需要部署 Pages，保留这段；不需要则删除
       # - name: Trigger Gitee Pages Deployment
       #   uses: yanglbme/gitee-pages-action@main
       #   with:
