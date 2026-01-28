@@ -1,25 +1,34 @@
 # 联通云OSS操作工具
 
-这是一个用于管理联通云OSS的命令行工具，支持批量和单独的上传、下载、删除功能。
+这是一个用于管理联通云OSS的命令行工具集，包含文件操作工具和ACL批量修改工具。
+
+## 工具列表
+
+1. **oss_tool.py**：文件操作工具，支持上传、下载、删除功能
+2. **acl_tool.py**：ACL批量修改工具，支持批量修改对象访问控制列表
 
 ## 功能特性
 
 - **上传文件**：支持单个文件上传和目录递归上传
 - **下载文件**：支持单个文件下载和目录递归下载
 - **删除文件**：支持单个文件删除和目录递归删除
+- **批量修改 ACL**：支持递归处理桶内所有对象的 ACL 设置
 - **并发操作**：可配置并发数，提高操作效率
 - **进度日志**：详细记录操作过程和结果
+- **灵活配置**：通过配置文件设置各种参数
 
 ## 安装依赖
 
 工具依赖以下Python库：
 - requests
 - pyyaml
+- python-dotenv
+- botocore（仅ACL工具需要）
 
 可以通过以下命令安装：
 
 ```bash
-pip install requests pyyaml
+pip install requests pyyaml python-dotenv botocore
 ```
 
 ## 配置
@@ -171,3 +180,52 @@ python tools/oss_tool.py --config tools/test_config.yaml delete --bucket hf-test
 ## 日志
 
 操作日志会记录在 `tools/` 目录下的 `oss_tool.log` 文件中，可以查看详细的操作过程和错误信息。
+
+## ACL 工具使用说明
+
+### 功能
+
+ACL 工具 (`acl_tool.py`) 用于批量修改 OSS 桶内对象的访问控制列表（ACL），支持递归处理所有对象并设置统一的权限策略。
+
+### 配置
+
+ACL 工具使用项目根目录下的 `config/config.yaml` 配置文件，其中包含 ACL 工具的配置选项：
+
+```yaml
+# ACL 工具配置
+acl:
+  # 目标 ACL 策略（private, public-read, public-read-write）
+  target_acl: "public-read-write"
+  # 并发处理线程数
+  thread_count: 10
+  # 批量处理大小
+  batch_size: 100
+  # 是否递归处理所有对象
+  recursive: true
+  # 处理前缀（可选，为空则处理整个桶）
+  prefix: ""
+  # 排除的文件后缀列表（可选）
+  exclude_suffixes: []
+```
+
+### 运行方法
+
+在项目根目录下执行：
+
+```bash
+python tools/acl_tool.py
+```
+
+### 支持的 ACL 策略
+
+- `private`：私有读写，只有桶所有者可以访问
+- `public-read`：公共读私有写，任何人都可以读取，但只有桶所有者可以写入
+- `public-read-write`：公共读写，任何人都可以读取和写入
+
+### 执行结果
+
+工具执行完成后，会输出详细的统计信息，包括总对象数、成功修改数、失败修改数和耗时等。
+
+### 详细文档
+
+请参考 `tools/README-acl.md` 文件获取更详细的 ACL 工具使用说明。
