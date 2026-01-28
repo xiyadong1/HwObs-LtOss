@@ -110,12 +110,12 @@ bucket_mappings:
   #   oss_prefix: ""
   #   exclude_suffixes: []
   # 阿里云OSS示例映射：将aliyun-bucket的文件迁移到oss-bucket
-  # - source_type: "aliyun"
-  #   source_bucket: "sdjyrecord"
-  #   oss_bucket: "test-1"
-  #   source_prefix: ""
-  #   oss_prefix: ""
-  #   exclude_suffixes: []
+  - source_type: "aliyun"
+    source_bucket: "sdjyalbum"
+    oss_bucket: "sdjyalbum"
+    source_prefix: ""
+    oss_prefix: ""
+    exclude_suffixes: []
 
 # 迁移配置
 migrate:
