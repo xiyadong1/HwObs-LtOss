@@ -184,6 +184,8 @@ python tools/acl_tool.py
 4. 工具使用了 `botocore` 库来实现 OSS 客户端，这是 AWS SDK for Python 的核心库，与联通云 OSS 兼容
 5. 工具默认忽略 SSL 证书验证，生产环境建议修改为 `verify=True`
 
+
+
 ## 日志
 
 操作日志会输出到控制台，同时也会记录到项目的日志系统中。可以通过修改 `config/config.yaml` 中的日志配置来调整日志级别和输出方式：
