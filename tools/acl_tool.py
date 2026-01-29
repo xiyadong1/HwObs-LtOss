@@ -2,11 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ACL 批量修改工具
-用于递归修改 OSS 桶内所有对象的访问控制列表（ACL）
+用于递归修改联通云 OSS 桶内对象的访问控制列表（ACL）
+支持多桶配置和单独的配置文件
 """
 
 import os
 import sys
+import argparse
+import yaml
 
 # 添加父目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,25 +32,25 @@ logger = logging.getLogger(__name__)
 class ACLTool:
     """ACL 批量修改工具类"""
     
-    def __init__(self):
-        """初始化 ACL 工具"""
-        # 加载配置
-        self.oss_config = config_loader.get_oss_config()
-        self.acl_config = config_loader.get_acl_config()
+    def __init__(self, config):
+        """初始化 ACL 工具
         
+        Args:
+            config (dict): 配置字典，包含 OSS 连接信息和 ACL 工具配置
+        """
         # 配置参数
-        self.endpoint_url = self.oss_config.get('endpoint')
-        self.access_key = self.oss_config.get('access_key')
-        self.secret_key = self.oss_config.get('secret_key')
-        self.bucket_name = self.oss_config.get('bucket_name')
+        self.endpoint_url = config.get('endpoint')
+        self.access_key = config.get('access_key')
+        self.secret_key = config.get('secret_key')
+        self.bucket_name = config.get('bucket_name')
         
         # ACL 工具配置
-        self.target_acl = self.acl_config.get('target_acl', 'public-read-write')
-        self.thread_count = self.acl_config.get('thread_count', 10)
-        self.batch_size = self.acl_config.get('batch_size', 100)
-        self.recursive = self.acl_config.get('recursive', True)
-        self.prefix = self.acl_config.get('prefix', '')
-        self.exclude_suffixes = self.acl_config.get('exclude_suffixes', [])
+        self.target_acl = config.get('target_acl', 'public-read-write')
+        self.thread_count = config.get('thread_count', 10)
+        self.batch_size = config.get('batch_size', 100)
+        self.recursive = config.get('recursive', True)
+        self.prefix = config.get('prefix', '')
+        self.exclude_suffixes = config.get('exclude_suffixes', [])
         
         # 验证配置
         self._validate_config()
@@ -243,13 +246,96 @@ class ACLTool:
             logger.error(f"批量修改 ACL 失败: {str(e)}")
             raise
 
+def load_config(config_file):
+    """加载配置文件
+    
+    Args:
+        config_file (str): 配置文件路径
+    
+    Returns:
+        dict: 配置字典
+    """
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"配置文件不存在: {config_file}")
+    
+    with open(config_file, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    
+    return config
+
 def main():
     """主函数"""
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='ACL 批量修改工具')
+    parser.add_argument('--config', '-c', type=str, default=None,
+                        help='配置文件路径，默认使用 config/config.yaml')
+    args = parser.parse_args()
+    
     try:
-        tool = ACLTool()
-        tool.run()
+        # 加载配置
+        if args.config:
+            # 使用指定的配置文件
+            config = load_config(args.config)
+        else:
+            # 使用默认配置
+            config = {
+                'oss': config_loader.get_oss_config(),
+                'acl': config_loader.get_acl_config()
+            }
+        
+        # 处理多桶配置
+        buckets = []
+        if 'buckets' in config:
+            # 多桶配置
+            buckets = config['buckets']
+            logger.info(f"发现 {len(buckets)} 个桶配置")
+        else:
+            # 单桶配置
+            oss_config = config.get('oss', {})
+            acl_config = config.get('acl', {})
+            bucket_config = {
+                'endpoint': oss_config.get('endpoint'),
+                'access_key': oss_config.get('access_key'),
+                'secret_key': oss_config.get('secret_key'),
+                'bucket_name': oss_config.get('bucket_name'),
+                'target_acl': acl_config.get('target_acl', 'public-read-write'),
+                'thread_count': acl_config.get('thread_count', 10),
+                'batch_size': acl_config.get('batch_size', 100),
+                'recursive': acl_config.get('recursive', True),
+                'prefix': acl_config.get('prefix', ''),
+                'exclude_suffixes': acl_config.get('exclude_suffixes', [])
+            }
+            buckets.append(bucket_config)
+        
+        # 处理每个桶
+        total_success = 0
+        total_failed = 0
+        total_objects = 0
+        
+        for i, bucket_config in enumerate(buckets):
+            logger.info(f"\n=== 处理桶 {i+1}/{len(buckets)}: {bucket_config['bucket_name']} ===")
+            
+            # 创建并运行 ACL 工具
+            tool = ACLTool(bucket_config)
+            tool.run()
+            
+            # 累计统计信息
+            total_objects += tool.total_objects
+            total_success += tool.success_count
+            total_failed += tool.failed_count
+        
+        # 打印总体结果
+        if len(buckets) > 1:
+            logger.info("\n=== 总体执行结果 ===")
+            logger.info(f"总桶数: {len(buckets)}")
+            logger.info(f"总对象数: {total_objects}")
+            logger.info(f"成功修改: {total_success}")
+            logger.info(f"失败修改: {total_failed}")
+            
     except Exception as e:
         logger.error(f"工具执行失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         exit(1)
 
 if __name__ == "__main__":

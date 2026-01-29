@@ -1,0 +1,41 @@
+# ACL 工具多桶配置示例
+
+# 多桶配置示例
+# 可以同时配置多个桶，每个桶可以有独立的 ACL 策略和配置
+
+buckets:
+  # 桶 1 配置
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
+    secret_key: "A6170506D4614680AEB9AC143C0818F38675"
+    bucket_name: "sdjyalbum"
+    target_acl: "public-read-write"
+    thread_count: 10
+    batch_size: 100
+    recursive: true
+    prefix: ""
+    exclude_suffixes: []
+  
+  # 桶 2 配置
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
+    secret_key: "A6170506D4614680AEB9AC143C0818F38675"
+    bucket_name: "sdjyrecord"
+    target_acl: "public-read-write"
+    thread_count: 15
+    batch_size: 100
+    recursive: true
+    prefix: ""
+    exclude_suffixes: []
+  
+  # 桶 3 配置
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
+    secret_key: "A6170506D4614680AEB9AC143C0818F38675"
+    bucket_name: "sdjytestcopy"
+    target_acl: "public-read-write"
+    thread_count: 8
+    batch_size: 100
+    recursive: true
+    prefix: ""
+    exclude_suffixes: []

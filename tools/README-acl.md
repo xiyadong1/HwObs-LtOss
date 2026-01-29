@@ -26,7 +26,11 @@ pip install botocore requests pyyaml python-dotenv
 
 ## 配置
 
-工具使用项目根目录下的 `config/config.yaml` 配置文件，其中包含 ACL 工具的配置选项：
+工具支持两种配置方式：
+
+### 1. 默认配置文件
+
+使用项目根目录下的 `config/config.yaml` 配置文件，其中包含 ACL 工具的配置选项：
 
 ```yaml
 # ACL 工具配置
@@ -43,32 +47,55 @@ acl:
   prefix: ""
   # 排除的文件后缀列表（可选）
   exclude_suffixes: []
-```
 
-同时需要确保 OSS 连接信息已正确配置：
-
-```yaml
 # 联通云OSS配置
 oss:
   # OSS桶名
   bucket_name: "your-bucket-name"
   # OSS endpoint
   endpoint: "https://your-oss-endpoint"
-  # 文件存储路径前缀（可选）
-  target_prefix: ""
+  # 访问密钥（可选，也可以通过环境变量设置）
+  access_key: "your-access-key"
+  secret_key: "your-secret-key"
+```
+
+### 2. 单独的配置文件
+
+可以使用单独的配置文件，支持多桶配置。配置文件格式如下：
+
+```yaml
+# 多桶配置示例
+buckets:
+  # 桶 1 配置
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "your-access-key"
+    secret_key: "your-secret-key"
+    bucket_name: "bucket-1"
+    target_acl: "public-read-write"
+    thread_count: 10
+    batch_size: 100
+    recursive: true
+    prefix: ""
+    exclude_suffixes: []
+  
+  # 桶 2 配置
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "your-access-key"
+    secret_key: "your-secret-key"
+    bucket_name: "bucket-2"
+    target_acl: "public-read"
+    thread_count: 15
+    batch_size: 100
+    recursive: true
+    prefix: "images/"
+    exclude_suffixes: [".log", ".tmp"]
 ```
 
 访问密钥可以通过环境变量设置（推荐）：
 - `OSS_ACCESS_KEY`：Access Key ID
 - `OSS_SECRET_KEY`：Secret Access Key
 
-也可以直接在配置文件中设置（不推荐用于生产环境）：
-
-```yaml
-oss:
-  access_key: "your-access-key"
-  secret_key: "your-secret-key"
-```
+也可以直接在配置文件中设置（不推荐用于生产环境）。
 
 ## 使用方法
 
@@ -77,7 +104,14 @@ oss:
 在项目根目录下执行：
 
 ```bash
+# 使用默认配置文件
 python tools/acl_tool.py
+
+# 使用指定的配置文件
+python tools/acl_tool.py --config tools/acl_config.yaml
+
+# 或使用短选项
+python tools/acl_tool.py -c tools/acl_config.yaml
 ```
 
 ### 执行流程
@@ -93,6 +127,10 @@ python tools/acl_tool.py
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |-------|------|-------|------|
+| `endpoint` | string | - | OSS 服务端点 |
+| `access_key` | string | - | Access Key ID |
+| `secret_key` | string | - | Secret Access Key |
+| `bucket_name` | string | - | 桶名称 |
 | `target_acl` | string | "public-read-write" | 目标 ACL 策略，支持：private, public-read, public-read-write |
 | `thread_count` | integer | 10 | 并发处理线程数 |
 | `batch_size` | integer | 100 | 批量处理大小 |
@@ -103,22 +141,30 @@ python tools/acl_tool.py
 ### 支持的 ACL 策略
 
 | 策略名称 | 描述 |
-|---------|------|
+|---------|------|  
 | `private` | 私有读写，只有桶所有者可以访问 |
 | `public-read` | 公共读私有写，任何人都可以读取，但只有桶所有者可以写入 |
 | `public-read-write` | 公共读写，任何人都可以读取和写入 |
 
 ## 示例
 
-### 示例1：修改整个桶的 ACL 为公共读写
+### 示例1：使用默认配置文件
 
 在 `config/config.yaml` 中设置：
 
 ```yaml
+# ACL 工具配置
 acl:
   target_acl: "public-read-write"
   prefix: ""
   recursive: true
+
+# 联通云OSS配置
+oss:
+  bucket_name: "hf-test"
+  endpoint: "https://obs-tj.cucloud.cn"
+  access_key: "your-access-key"
+  secret_key: "your-secret-key"
 ```
 
 执行命令：
@@ -127,43 +173,67 @@ acl:
 python tools/acl_tool.py
 ```
 
-### 示例2：修改特定前缀下对象的 ACL
+### 示例2：使用单独的配置文件（单桶）
 
-在 `config/config.yaml` 中设置：
+创建 `tools/acl_config.yaml` 文件：
 
 ```yaml
+# 单桶配置
+oss:
+  endpoint: "https://obs-tj.cucloud.cn"
+  access_key: "your-access-key"
+  secret_key: "your-secret-key"
+  bucket_name: "hf-test"
+
 acl:
   target_acl: "public-read"
   prefix: "images/"
   recursive: true
+  exclude_suffixes: [".log"]
 ```
 
 执行命令：
 
 ```bash
-python tools/acl_tool.py
+python tools/acl_tool.py --config tools/acl_config.yaml
 ```
 
-### 示例3：排除特定后缀的文件
+### 示例3：使用单独的配置文件（多桶）
 
-在 `config/config.yaml` 中设置：
+创建 `tools/multi_bucket_config.yaml` 文件：
 
 ```yaml
-acl:
-  target_acl: "private"
-  exclude_suffixes: [".log", ".tmp"]
-  recursive: true
+# 多桶配置
+buckets:
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "your-access-key"
+    secret_key: "your-secret-key"
+    bucket_name: "bucket-1"
+    target_acl: "public-read-write"
+    thread_count: 10
+    recursive: true
+  
+  - endpoint: "https://obs-tj.cucloud.cn"
+    access_key: "your-access-key"
+    secret_key: "your-secret-key"
+    bucket_name: "bucket-2"
+    target_acl: "public-read"
+    thread_count: 15
+    prefix: "docs/"
+    exclude_suffixes: [".tmp"]
 ```
 
 执行命令：
 
 ```bash
-python tools/acl_tool.py
+python tools/acl_tool.py --config tools/multi_bucket_config.yaml
 ```
 
 ## 执行结果
 
 工具执行完成后，会输出详细的统计信息：
+
+### 单桶执行结果
 
 ```
 === ACL 批量修改完成 ===
@@ -172,6 +242,32 @@ python tools/acl_tool.py
 失败修改: 0
 耗时: 0.27 秒
 平均速度: 71.25 对象/秒
+```
+
+### 多桶执行结果
+
+```
+=== 处理桶 1/2: bucket-1 ===
+=== ACL 批量修改完成 ===
+总对象数: 10
+成功修改: 10
+失败修改: 0
+耗时: 0.15 秒
+平均速度: 66.67 对象/秒
+
+=== 处理桶 2/2: bucket-2 ===
+=== ACL 批量修改完成 ===
+总对象数: 15
+成功修改: 15
+失败修改: 0
+耗时: 0.20 秒
+平均速度: 75.00 对象/秒
+
+=== 总体执行结果 ===
+总桶数: 2
+总对象数: 25
+成功修改: 25
+失败修改: 0
 ```
 
 如果有失败的对象，会列出前 10 个失败的对象及其错误信息。

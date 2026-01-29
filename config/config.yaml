@@ -10,7 +10,7 @@ acl:
   # 目标 ACL 策略（private, public-read, public-read-write）
   target_acl: "public-read-write"
   # 并发处理线程数
-  thread_count: 10
+  thread_count: 50
   # 批量处理大小
   batch_size: 100
   # 是否递归处理所有对象
@@ -72,7 +72,7 @@ aliyun:
 # 联通云OSS配置
 oss:
   # OSS桶名(acl_tools获取该桶名称)
-  bucket_name: "test-1"
+  bucket_name: "sdjytestcopy"
   # OSS endpoint
   endpoint: "https://obs-tj.cucloud.cn"
   # 文件存储路径前缀（可选）
