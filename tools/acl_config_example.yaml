@@ -8,34 +8,34 @@ buckets:
   - endpoint: "https://obs-tj.cucloud.cn"
     access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
     secret_key: "A6170506D4614680AEB9AC143C0818F38675"
-    bucket_name: "sdjyalbum"
+    bucket_name: "carbon-assetss"
     target_acl: "public-read-write"
-    thread_count: 10
+    thread_count: 20
     batch_size: 100
     recursive: true
     prefix: ""
     exclude_suffixes: []
   
-  # 桶 2 配置
-  - endpoint: "https://obs-tj.cucloud.cn"
-    access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
-    secret_key: "A6170506D4614680AEB9AC143C0818F38675"
-    bucket_name: "sdjyrecord"
-    target_acl: "public-read-write"
-    thread_count: 15
-    batch_size: 100
-    recursive: true
-    prefix: ""
-    exclude_suffixes: []
+  # # 桶 2 配置
+  # - endpoint: "https://obs-tj.cucloud.cn"
+  #   access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
+  #   secret_key: "A6170506D4614680AEB9AC143C0818F38675"
+  #   bucket_name: "sdjyrecord"
+  #   target_acl: "public-read-write"
+  #   thread_count: 15
+  #   batch_size: 100
+  #   recursive: true
+  #   prefix: ""
+  #   exclude_suffixes: []
   
-  # 桶 3 配置
-  - endpoint: "https://obs-tj.cucloud.cn"
-    access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
-    secret_key: "A6170506D4614680AEB9AC143C0818F38675"
-    bucket_name: "sdjytestcopy"
-    target_acl: "public-read-write"
-    thread_count: 8
-    batch_size: 100
-    recursive: true
-    prefix: ""
-    exclude_suffixes: []
+  # # 桶 3 配置
+  # - endpoint: "https://obs-tj.cucloud.cn"
+  #   access_key: "7412D2DA2D9A4F0CB8ECD4173B68A2397607"
+  #   secret_key: "A6170506D4614680AEB9AC143C0818F38675"
+  #   bucket_name: "sdjytestcopy"
+  #   target_acl: "public-read-write"
+  #   thread_count: 8
+  #   batch_size: 100
+  #   recursive: true
+  #   prefix: ""
+  #   exclude_suffixes: []
